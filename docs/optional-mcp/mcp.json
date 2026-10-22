@@ -1,0 +1,10 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+  "mcpServers": {
+    "ork_codex": {
+      "type": "stdio",
+      "command": "python",
+      "args": ["-I", "-B", "./scripts/ork_codex.py", "serve"]
+    }
+  }
+}

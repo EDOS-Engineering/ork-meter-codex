@@ -1,0 +1,50 @@
+name: Plugin checks
+on:
+  push:
+    branches: [main]
+  pull_request:
+  merge_group:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  # Superseded PR pushes are cancelled; every main and merge-queue run finishes.
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  local-contracts:
+    name: contracts (${{ matrix.os }}, Python ${{ matrix.python }})
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ['3.11', '3.12', '3.13']
+        include:
+          - os: macos-latest
+            python: '3.13'
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - run: python -m pip install -e ".[test]"
+      - run: python -B scripts/validate.py
+      - run: python -B -m unittest discover -s tests -v
+      - run: python -B scripts/replay.py --output .local/replay.json
+  ci-gate:
+    name: ci-gate
+    if: always()
+    needs: [local-contracts]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: Require every matrix job to pass
+        env:
+          RESULT: ${{ needs.local-contracts.result }}
+        run: test "$RESULT" = success

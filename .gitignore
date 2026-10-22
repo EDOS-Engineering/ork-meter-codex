@@ -1,0 +1,9 @@
+.local/
+dist/
+build/
+__pycache__/
+*.py[cod]
+.venv/
+*.egg-info/
+.coverage
+coverage.xml

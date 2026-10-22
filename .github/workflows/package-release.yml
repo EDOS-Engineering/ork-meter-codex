@@ -1,0 +1,193 @@
+name: package-release
+
+# Builds the reviewed Ork Meter helper (EDOS-Engineering/ork-meter
+# cmd/ork-meter) for every supported platform and this plugin's wheel, writes
+# a .sha256 per asset and a manifest.json, tags the dispatching main commit
+# v<version> and publishes GitHub Release v<version> with those assets.
+# ork_codex/helper.py downloads the host's helper from that release during
+# setup and verifies it against manifest.json, so customers build nothing.
+# Manual dispatch only, from main, behind the protected production
+# environment: publication is a reviewed release operation and never happens
+# on push (CONTRIBUTING). The version is the one plugin.json,
+# .codex-plugin/plugin.json and pyproject.toml already carry; bump it by pull
+# request first. See docs/release.md.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ork_meter_ref:
+        description: "ork-meter tag or commit to build the helper from (prefer a tag or full SHA)"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+# One release at a time.
+concurrency:
+  group: package-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    name: verify contracts and production gate
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+      - run: python -m pip install -e .
+      - run: python -B scripts/validate.py
+      - run: python -B -m unittest discover -s tests -v
+      - name: Require an existing protected production environment
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          gh api "repos/$GITHUB_REPOSITORY/environments/production" > "$RUNNER_TEMP/production.json"
+          gh api "repos/$GITHUB_REPOSITORY/environments/production/deployment-branch-policies?per_page=100" > "$RUNNER_TEMP/production-branches.json"
+          python3 .github/scripts/check-release-gate.py "$RUNNER_TEMP/production.json" "$RUNNER_TEMP/production-branches.json"
+
+  package:
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    environment: production
+    name: package and publish from ork-meter ${{ inputs.ork_meter_ref }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # create the tag v<version> on the dispatching main commit and the GitHub Release; never a branch
+      id-token: write # sign the build provenance attestation
+      attestations: write # store the attestation on this repository
+    env:
+      ORK_METER_REF: ${{ inputs.ork_meter_ref }}
+    steps:
+      - name: Check out the plugin at the dispatching commit
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # tags: the version must be new
+          persist-credentials: false
+
+      - name: Check out ork-meter at the requested ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: EDOS-Engineering/ork-meter
+          ref: ${{ inputs.ork_meter_ref }}
+          token: ${{ secrets.ORK_METER_READ_TOKEN }} # read-only token for ork-meter; see docs/release.md
+          path: ork-meter
+          persist-credentials: false
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.11"
+
+      - name: Validate the version, the tag and the platform source
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          version=$(python3 -c 'import sys; sys.path.insert(0, "scripts"); import package_release as p; print(p.plugin_version(p.ROOT))')
+          tag="v$version"
+          if git ls-remote --exit-code --tags origin "refs/tags/$tag" >/dev/null; then
+            echo "::error::tag $tag already exists; releases are never rewritten. Bump the version by pull request first (docs/release.md)."; exit 1
+          fi
+          if gh release view "$tag" >/dev/null 2>&1; then
+            echo "::error::GitHub Release $tag already exists; releases are never rewritten (docs/release.md)."; exit 1
+          fi
+          if [ ! -f ork-meter/cmd/ork-meter/main.go ]; then
+            echo "::error::ork-meter at '$ORK_METER_REF' has no cmd/ork-meter/main.go; choose a ref that carries the helper."; exit 1
+          fi
+          {
+            echo "version=$version"
+            echo "tag=$tag"
+            echo "ork_meter_commit=$(git -C ork-meter rev-parse HEAD)"
+          } >> "$GITHUB_OUTPUT"
+          echo "plugin $version from $(git rev-parse --short HEAD) (${GITHUB_REF_NAME}); helper from ork-meter $ORK_METER_REF = $(git -C ork-meter rev-parse HEAD)"
+
+      - name: Set up Go from ork-meter's go.mod
+        uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version-file: ork-meter/go.mod
+          cache-dependency-path: ork-meter/go.sum
+
+      - name: Build the helpers, the wheel, the digests and the manifest
+        run: |
+          set -euo pipefail
+          python3 scripts/package_release.py \
+            --platform-source ork-meter \
+            --ork-meter-ref "$ORK_METER_REF" \
+            --targets darwin-arm64 darwin-amd64 linux-amd64 linux-arm64 windows-amd64 \
+            --output "$RUNNER_TEMP/release"
+          ls -l "$RUNNER_TEMP/release"
+
+      - name: Smoke-test the linux-amd64 helper on the runner
+        # With no arguments the helper prints its usage and exits 2; that is
+        # its only side-effect-free invocation. It proves the binary starts,
+        # not platform acceptance for the other targets.
+        run: |
+          set -euo pipefail
+          helper="$RUNNER_TEMP/release/ork-meter-linux-amd64"
+          chmod 700 "$helper"
+          if "$helper" 2> "$RUNNER_TEMP/usage"; then echo "::error::helper exited 0 without arguments"; exit 1; fi
+          grep -q '^Usage: ork-meter ' "$RUNNER_TEMP/usage"
+          (cd "$RUNNER_TEMP/release" && sha256sum -c -- *.sha256)
+
+      - name: Attest build provenance for every asset
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            ${{ runner.temp }}/release/ork-meter-*
+            ${{ runner.temp }}/release/*.whl
+            ${{ runner.temp }}/release/manifest.json
+
+      - name: Tag the dispatching commit and create the GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          TAG: ${{ steps.release.outputs.tag }}
+          ORK_METER_COMMIT: ${{ steps.release.outputs.ork_meter_commit }}
+          DISPATCHER: ${{ github.actor }}
+        run: |
+          set -euo pipefail
+          release="$RUNNER_TEMP/release"
+          {
+            echo "Ork Meter for Codex $VERSION."
+            echo
+            echo "Install the plugin, then run setup; it downloads the helper for your platform from this release and verifies it against manifest.json (README, \"Install\"):"
+            echo
+            echo '```text'
+            echo "codex plugin marketplace add EDOS-Engineering/ork-meter-codex"
+            echo "codex plugin add ork-meter-codex@edos-codex"
+            echo '```'
+            echo
+            echo "- plugin commit: ${GITHUB_SHA} (tag $TAG on main)"
+            echo "- helper: EDOS-Engineering/ork-meter $ORK_METER_REF ($ORK_METER_COMMIT), built with CGO_ENABLED=0 go build -trimpath -ldflags \"-s -w -buildid=\" -buildvcs=false"
+            echo "- published by: @$DISPATCHER through the production environment, run ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- provenance: each asset has a build provenance attestation; verify with \`gh attestation verify <asset> --repo ${GITHUB_REPOSITORY}\`"
+            echo
+            echo "The helpers are unsigned and not notarized; compilation is not native acceptance on each platform (docs/release.md)."
+            echo
+            echo "| asset | SHA256 |"
+            echo "|---|---|"
+            python3 -c 'import json,sys; [print(f"| {n} | `{s}` |") for n, s in json.load(open(sys.argv[1]))["assets"].items()]' "$release/manifest.json"
+          } > "$RUNNER_TEMP/notes"
+          # --target creates the tag at the dispatching main commit; no branch is pushed.
+          gh release create "$TAG" --target "$GITHUB_SHA" --title "Ork Meter for Codex $VERSION" --notes-file "$RUNNER_TEMP/notes" "$release"/*
+          {
+            echo "## Ork Meter for Codex $VERSION: GitHub Release published"
+            echo
+            echo "- release: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/$TAG"
+            echo "- plugin commit: ${GITHUB_SHA} (${GITHUB_REF_NAME})"
+            echo "- helper: ork-meter $ORK_METER_REF ($ORK_METER_COMMIT)"
+            echo
+            sed -n '/^| asset/,$p' "$RUNNER_TEMP/notes"
+          } >> "$GITHUB_STEP_SUMMARY"

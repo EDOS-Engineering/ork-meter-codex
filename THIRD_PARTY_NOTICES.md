@@ -25,3 +25,11 @@ Provenance and the vocabulary's SHA-256 are in
 | `websockets` | tests (optional `test` extra) | BSD-3-Clause |
 
 Each package's licence ships with the package you install.
+
+## Ork Meter helper binaries
+
+The `ork-meter-<os>-<arch>` helpers that setup downloads from a GitHub Release
+statically link the Go standard library and third-party Go modules. Each
+release publishes their licence texts as `ork-meter-THIRD_PARTY_NOTICES.txt`
+next to the helpers, generated at build time from the exact helper source the
+release builds.

@@ -84,7 +84,7 @@ class PackageRelease(unittest.TestCase):
             targets = list(dict.fromkeys([host_target(), "windows-amd64"]))  # one entry on a Windows host
             record = package.build(source, output, "v9.9.9", targets, go=GO, wheel=False)
             names = sorted(p.name for p in output.iterdir())
-            expected = ["manifest.json"]
+            expected = ["manifest.json", package.NOTICES, package.NOTICES + ".sha256"]
             for target in targets:
                 asset = package.asset_name(target)
                 expected += [asset, asset + ".sha256"]
@@ -101,7 +101,11 @@ class PackageRelease(unittest.TestCase):
             for name, value in manifest["assets"].items():
                 self.assertEqual(hashlib.sha256((output / name).read_bytes()).hexdigest(), value, name)
                 self.assertEqual((output / (name + ".sha256")).read_text(), f"{value}  {name}\n")
-            self.assertEqual({entry["asset"] for entry in manifest["helpers"].values()}, set(manifest["assets"]))
+            self.assertEqual({entry["asset"] for entry in manifest["helpers"].values()} | {package.NOTICES}, set(manifest["assets"]))
+            self.assertEqual(manifest["notices"], package.NOTICES)
+            notices = (output / package.NOTICES).read_text()
+            self.assertIn("Go standard library: LICENSE", notices)
+            self.assertIn("0 Go module(s)", notices)
             host = output / package.asset_name(host_target())
             result = subprocess.run([str(host)], capture_output=True, text=True)
             self.assertEqual(result.returncode, 2)
@@ -110,6 +114,32 @@ class PackageRelease(unittest.TestCase):
             again = Path(temp) / "again"
             package.build(source, again, "v9.9.9", [host_target()], go=GO, wheel=False)
             self.assertEqual((again / host.name).read_bytes(), host.read_bytes())
+
+    @unittest.skipUnless(GO, "go is not on PATH")
+    def test_notices_carry_every_compiled_module_licence_or_the_build_stops(self):
+        with TemporaryDirectory() as temp:
+            source = write_source(Path(temp) / "platform source")
+            dependency = Path(temp) / "dependency"
+            dependency.mkdir()
+            (dependency / "go.mod").write_text("module example.invalid/dependency\n\ngo 1.21\n")
+            (dependency / "dependency.go").write_text("package dependency\n\nconst Name = \"dependency\"\n")
+            (dependency / "LICENSE").write_text("Synthetic dependency licence text.\n")
+            with open(source / "go.mod", "a") as mod:
+                mod.write("\nrequire example.invalid/dependency v0.0.0\n\nreplace example.invalid/dependency => ../dependency\n")
+            main = source / "cmd/ork-meter/main.go"
+            main.write_text(MAIN.replace('"os"\n)', '"os"\n\n\t"example.invalid/dependency"\n)')
+                                .replace('fmt.Println("synthetic helper")', 'fmt.Println(dependency.Name)'))
+            output = Path(temp) / "release"
+            record = package.build(source, output, "v9.9.9", [host_target()], go=GO, wheel=False)
+            notices = (output / package.NOTICES).read_text()
+            self.assertIn("1 Go module(s)", notices)
+            self.assertIn("example.invalid/dependency v0.0.0: LICENSE", notices)
+            self.assertIn("Synthetic dependency licence text.", notices)
+            self.assertEqual(record["assets"][package.NOTICES],
+                             hashlib.sha256((output / package.NOTICES).read_bytes()).hexdigest())
+            (dependency / "LICENSE").unlink()
+            with self.assertRaises(SystemExit):
+                package.build(source, Path(temp) / "unlicensed", "v9.9.9", [host_target()], go=GO, wheel=False)
 
 
 if __name__ == "__main__":

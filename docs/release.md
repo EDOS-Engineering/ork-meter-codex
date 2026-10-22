@@ -18,6 +18,8 @@ ork-meter-darwin-amd64
 ork-meter-linux-amd64
 ork-meter-linux-arm64
 ork-meter-windows-amd64.exe
+ork-meter-THIRD_PARTY_NOTICES.txt          licence texts of the Go standard library and every
+                                           Go module compiled into any helper
 ork_meter_codex-<version>-py3-none-any.whl the plugin package
 <asset>.sha256                             "<hex>  <asset>", one per asset above
 manifest.json                              plugin version, tag, plugin commit, ork-meter ref and
@@ -119,6 +121,9 @@ What the `package` job does, in order:
 3. Installs the Go toolchain named by ork-meter's `go.mod`.
 4. Runs `scripts/package_release.py`, which builds the five helpers with
    `CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -buildid=" -buildvcs=false`,
+   writes `ork-meter-THIRD_PARTY_NOTICES.txt` from the licence files of every
+   Go module those builds compile in (`go list -deps` per target, read from
+   the module cache; a module without a licence file fails the job),
    builds the wheel with `pip wheel --no-deps`, writes a `.sha256` per asset
    and `manifest.json`, and prints each digest.
 5. Smoke-tests the linux-amd64 helper: run with no arguments it prints its

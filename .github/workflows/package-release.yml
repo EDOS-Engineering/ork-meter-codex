@@ -140,6 +140,7 @@ jobs:
           if "$helper" 2> "$RUNNER_TEMP/usage"; then echo "::error::helper exited 0 without arguments"; exit 1; fi
           grep -q '^Usage: ork-meter ' "$RUNNER_TEMP/usage"
           (cd "$RUNNER_TEMP/release" && sha256sum -c -- *.sha256)
+          grep -q '^Go standard library: LICENSE$' "$RUNNER_TEMP/release/ork-meter-THIRD_PARTY_NOTICES.txt"
 
       - name: Attest build provenance for every asset
         uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
@@ -175,6 +176,8 @@ jobs:
             echo "- provenance: each asset has a build provenance attestation; verify with \`gh attestation verify <asset> --repo ${GITHUB_REPOSITORY}\`"
             echo
             echo "The helpers are unsigned and not notarized; compilation is not native acceptance on each platform (docs/release.md)."
+            echo
+            echo "Third-party licences for the Go standard library and every Go module compiled into the helpers are in ork-meter-THIRD_PARTY_NOTICES.txt."
             echo
             echo "| asset | SHA256 |"
             echo "|---|---|"

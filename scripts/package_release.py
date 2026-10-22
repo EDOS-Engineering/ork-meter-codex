@@ -5,7 +5,12 @@ for each target into <output>/ork-meter-<os>-<arch> (.exe on Windows) with
 CGO_ENABLED=0 go build -trimpath -ldflags "-s -w -buildid=" -buildvcs=false,
 builds this package's wheel, writes a <asset>.sha256 file per asset in
 sha256sum -c format and a manifest.json (plugin version, ork-meter ref and
-commit, Go version, sha256 per asset). ork_codex/helper.py downloads the host's
+commit, Go version, sha256 per asset). It also writes
+ork-meter-THIRD_PARTY_NOTICES.txt next to the helpers: the licence and notice
+files of every non-standard-library Go module compiled into any target, read
+from the module cache by the same Go toolchain. A module without a licence
+file stops the build, so no helper ships without its notices.
+ork_codex/helper.py downloads the host's
 helper from the published GitHub Release and verifies it against that
 manifest. The package-release workflow calls this; it also runs locally. It
 builds files only: it never commits, tags, pushes or publishes anything.
@@ -27,6 +32,38 @@ TARGETS = ("darwin-arm64", "darwin-amd64", "linux-amd64", "linux-arm64", "window
 HELPER_PACKAGE = "./cmd/ork-meter"
 HELPER_MAIN = "cmd/ork-meter/main.go"
 HELPER = "ork-meter"
+NOTICES = "ork-meter-THIRD_PARTY_NOTICES.txt"
+LICENCE_FILE = re.compile(r"^(licen[cs]e|copying|notice|patents)([._-].*)?$", re.IGNORECASE)
+# The Go distribution's LICENSE (https://go.dev/LICENSE); some toolchain
+# packages omit it from GOROOT, so it is reproduced here.
+GO_LICENSE = """Copyright 2009 The Go Authors.
+
+Redistribution and use in source and binary forms, with or without
+modification, are permitted provided that the following conditions are
+met:
+
+   * Redistributions of source code must retain the above copyright
+notice, this list of conditions and the following disclaimer.
+   * Redistributions in binary form must reproduce the above
+copyright notice, this list of conditions and the following disclaimer
+in the documentation and/or other materials provided with the
+distribution.
+   * Neither the name of Google LLC nor the names of its
+contributors may be used to endorse or promote products derived from
+this software without specific prior written permission.
+
+THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS
+"AS IS" AND ANY EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT
+LIMITED TO, THE IMPLIED WARRANTIES OF MERCHANTABILITY AND FITNESS FOR
+A PARTICULAR PURPOSE ARE DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT
+OWNER OR CONTRIBUTORS BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL,
+SPECIAL, EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT
+LIMITED TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE,
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND ON ANY
+THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
+(INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE
+OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE."""
+MODULE_FORMAT = "{{with .Module}}{{if not .Main}}{{.Path}}\t{{.Version}}\t{{with .Replace}}{{.Dir}}{{else}}{{.Dir}}{{end}}{{end}}{{end}}"
 PLUGIN = "ork-meter-codex"
 BUILD_FLAGS = ["-trimpath", "-ldflags", "-s -w -buildid=", "-buildvcs=false"]
 ROOT = Path(__file__).resolve().parents[1]
@@ -82,6 +119,45 @@ def build_helper(go, source, output, target):
     return name, value
 
 
+def helper_modules(go, source, target):
+    """{path: (version, dir)} for every non-main module compiled into the target."""
+    target_os, target_arch = target.split("-", 1)
+    environment = dict(os.environ, GOOS=target_os, GOARCH=target_arch, CGO_ENABLED="0")
+    listing = subprocess.run([go, "list", "-mod=readonly", "-deps", "-f", MODULE_FORMAT, HELPER_PACKAGE],
+                             cwd=source, env=environment, check=True, capture_output=True, text=True).stdout
+    modules = {}
+    for line in listing.splitlines():
+        if not line.strip():
+            continue
+        path, version, directory = line.split("\t")
+        if not directory:
+            raise SystemExit(f"Go module {path} {version} is not in the module cache; cannot read its licence")
+        modules[path] = (version, directory)
+    return modules
+
+
+def write_notices(go, source, output, targets):
+    """Write the licence and notice files of every Go module compiled into the helpers."""
+    modules = {}
+    for target in targets:
+        modules.update(helper_modules(go, source, target))
+    sections = [f"{'=' * 78}\nGo standard library: LICENSE\n{'=' * 78}\n\n{GO_LICENSE}\n"]
+    for path, (version, directory) in sorted(modules.items()):
+        files = sorted(p for p in Path(directory).iterdir() if p.is_file() and LICENCE_FILE.match(p.name))
+        if not files:
+            raise SystemExit(f"Go module {path} {version} has no licence file in {directory}; refusing to ship it without notices")
+        for file in files:
+            text = file.read_text(encoding="utf-8", errors="replace").rstrip()
+            sections.append(f"{'=' * 78}\n{path} {version or '(local)'}: {file.name}\n{'=' * 78}\n\n{text}\n")
+    header = ("Third-party notices for the Ork Meter helper (ork-meter-<os>-<arch>).\n\n"
+              f"The helper statically links the Go standard library and the {len(modules)} Go module(s) below.\n"
+              "Each is licensed under the terms reproduced here.\n")
+    (output / NOTICES).write_text(header + "".join("\n" + s for s in sections), encoding="utf-8", newline="\n")
+    value = digest(output / NOTICES)
+    write_sum(output, NOTICES, value)
+    return value
+
+
 def build_wheel(python, root, output):
     before = set(output.iterdir())
     subprocess.run([python, "-m", "pip", "wheel", "--no-deps", "--quiet", "--wheel-dir", str(output), str(root)], check=True)
@@ -113,10 +189,12 @@ def build(source, output, ork_meter_ref, targets=TARGETS, *, go="go", python=sys
     for target in targets:
         name, value = build_helper(go, source, output, target)
         helpers[target] = {"asset": name, "sha256": value}
+    notices_digest = write_notices(go, source, output, targets)
     wheel_name = wheel_digest = None
     if wheel:
         wheel_name, wheel_digest = build_wheel(python, root, output)
     assets = {entry["asset"]: entry["sha256"] for entry in helpers.values()}
+    assets[NOTICES] = notices_digest
     if wheel_name:
         assets[wheel_name] = wheel_digest
     record = {
@@ -130,6 +208,7 @@ def build(source, output, ork_meter_ref, targets=TARGETS, *, go="go", python=sys
         "go_version": go_version,
         "build": "CGO_ENABLED=0 go build " + " ".join(f'"{f}"' if " " in f else f for f in BUILD_FLAGS) + " " + HELPER_PACKAGE,
         "helpers": helpers,
+        "notices": NOTICES,
         "wheel": wheel_name,
         "assets": dict(sorted(assets.items())),
     }

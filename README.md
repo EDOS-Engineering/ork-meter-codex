@@ -431,6 +431,6 @@ The native helper projection test runs when `.local/ork-meter[.exe]` is built or
 contracts and synthetic replay on Windows/Linux with Python 3.11–3.13; it does
 not deploy, publish a release or make paid inference calls.
 
-Copyright 2026 EDOS. Licensed for use with an Ork Meter or Ork Meter Plus
+Copyright 2026 Enterprise DevOps Solutions LLC. Licensed for use with an Ork Meter or Ork Meter Plus
 account; see [LICENSE](LICENSE). Third-party components are listed in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).

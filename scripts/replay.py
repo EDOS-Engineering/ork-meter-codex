@@ -12,7 +12,7 @@ sys.path.insert(0, str(ROOT))
 from ork_codex.policy import Policy
 from ork_codex.reduce import deliver
 from ork_codex.storage import Store
-from benchmark_tokens import Tokenizer
+from ork_codex import tokens
 
 
 def fixtures():
@@ -28,7 +28,11 @@ def main():
     parser.add_argument("--output", type=Path)
     parser.add_argument("--tokenizer", choices=["none", "o200k_base"], default="none")
     args = parser.parse_args()
-    tokenizer = Tokenizer(args.tokenizer)
+    count = tokens.count if args.tokenizer == "o200k_base" else (lambda text: None)
+    tokenizer_identity = ({"name": "o200k_base", "status": "available", "package": "tiktoken",
+                 "package_version": tokens.VERSION, "vocabulary_sha256": tokens.VOCAB_SHA256,
+                 "source": "bundled ork_codex/data vocabulary"}
+                if args.tokenizer == "o200k_base" else {"name": "none", "status": "unavailable"})
     results = []
     store = Store(ROOT / ".local" / "replay" / uuid.uuid4().hex)
     for budget in (4096, 8192, 16384):
@@ -47,12 +51,12 @@ def main():
             results.append({"fixture": name, "sha256": hashlib.sha256(raw).hexdigest(),
                             "budget_bytes": budget, "raw_bytes": len(raw), "candidate_bytes": len(visible),
                             "avoided_bytes": len(raw)-len(visible),
-                            "raw_surrogate_tokens": tokenizer.count(raw),
-                            "candidate_surrogate_tokens": tokenizer.count(visible),
-                            "surrogate_tokens_avoided": (tokenizer.count(raw)-tokenizer.count(visible)) if tokenizer.encoder else None,
+                            "raw_surrogate_tokens": count(raw),
+                            "candidate_surrogate_tokens": count(visible),
+                            "surrogate_tokens_avoided": (count(raw)-count(visible)) if args.tokenizer == "o200k_base" else None,
                             "reduced": info["reduced"], "exact_recovery": True, "required_diagnostics_retained": True})
     report = {"schema": "ork-codex-replay-v2", "results": results, "model_calls": 0,
-              "tokenizer": tokenizer.identity,
+              "tokenizer": tokenizer_identity,
               "synthetic_delivery_ids": True,
               "evidence": "synthetic local replay only; no end-to-end task quality, billed-token or economic savings claim"}
     text = json.dumps(report, indent=2) + "\n"

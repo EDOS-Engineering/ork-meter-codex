@@ -10,8 +10,5 @@ real transcripts, raw provider exports, source-bearing runtime artifacts,
 credentials, `.local/`, or customer configuration. Do not report byte reduction
 as observed billing or quality improvement.
 
-Following EDOS's source-repository attribution convention, agent commits record
-`Agent`, `Agent-Version`, and `Model` trailers. Human-only changes use `Agent:
-none`. Pull requests identify the human requester, task, and model. This
-repository's CI validates local contracts and never deploys or publishes a
+This repository's CI validates local contracts and never deploys or publishes a
 release. Customer release/promotion requires the business's normal review.

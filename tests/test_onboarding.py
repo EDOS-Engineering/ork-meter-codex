@@ -489,7 +489,7 @@ class Setup(unittest.TestCase):
                 (profile/'config.toml').write_text(config,encoding='utf-8')
                 state=root/'state';state.mkdir()
                 setup.install_plugin(codex,state,helper)
-                cached=profile/'plugins/cache/edos-codex/ork-meter-codex/0.1.1'
+                cached=profile/'plugins/cache/edos-codex/ork-meter-codex/0.1.2'
                 self.assertTrue((cached/'ork_codex/mcp.py').is_file())
                 self.assertFalse((cached/'skills').exists())
                 self.assertFalse((cached/'hooks/hooks.json').exists())

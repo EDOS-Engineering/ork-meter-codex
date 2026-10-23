@@ -44,7 +44,7 @@ jobs:
       - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
         with:
           python-version: "3.11"
-      - run: python -m pip install -e .
+      - run: python -m pip install -e ".[test]"
       - run: python -B scripts/validate.py
       - run: python -B -m unittest discover -s tests -v
       - name: Require an existing protected production environment

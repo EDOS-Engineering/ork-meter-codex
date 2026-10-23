@@ -181,6 +181,26 @@ Omit `--targets` for all five and `--skip-wheel` to build the wheel too. The
 output directory must be new or empty. `scripts/build_meter.py` stays the
 development builder and writes only `.local/ork-meter` for the host.
 
+## Syncing from the private repository
+
+This repository is a public mirror of the shipped files of
+`EDOS-Engineering/codex-plugin`. To take its changes:
+
+```text
+python scripts/sync_from_private.py /path/to/codex-plugin
+```
+
+The script copies every file this repository already ships under `ork_codex/`,
+`hooks/`, `contracts/`, `scripts/`, `tests/`, `.codex-plugin/`,
+`.claude-plugin/`, `pyproject.toml`, `plugin.json` and the CI and release
+workflows, reapplies the public-only edits (repository name, licence
+identifier) and prunes test methods that import benchmark modules this
+repository does not carry. It lists files new in the private checkout without
+copying them. It never touches LICENSE, SECURITY.md, README.md, `docs/`, the
+ruleset, the notices or `scripts/replay.py`. Review `git diff`, run
+`scripts/validate.py`, `scripts/replay.py` and the unit tests, then open a
+pull request.
+
 ## What this process does not cover
 
 - **No automated acceptance.** The workflow proves the linux-amd64 helper

@@ -1,6 +1,6 @@
 # Reporting security issues
 
-**Report suspected vulnerabilities privately to `edos-labs@edos.io`.**
+**Report suspected vulnerabilities privately to `edos-labs@edos.io`, or through [GitHub private vulnerability reporting](https://github.com/EDOS-Engineering/ork-meter-codex/security/advisories/new) on this repository.**
 Don't open a public issue, pull request or discussion that describes a vulnerability or how to exploit it.
 
 Please include:

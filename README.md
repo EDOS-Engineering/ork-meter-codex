@@ -387,7 +387,7 @@ until the user removes the state directory; no silent expiration or rerun.
 | `ORK_CODEX_TEST_FILTER` | `on` | `off`, `0`, `false`, or `no` disables pass filtering |
 | `ORK_CODEX_WORKSPACE` | standalone server cwd | Standalone MCP default; installed native calls require `workspace` |
 | `ORK_CODEX_SESSION` | unset | Optional explicit context identity for three-failure warnings |
-| `ORK_CODEX_RUN` | generated per Store/process | Explicit task/attempt ID shared by wrapper and MCP for benchmark grouping |
+| `ORK_CODEX_RUN` | generated per Store/process | Explicit task/attempt ID shared by wrapper and MCP for task grouping |
 | `ORK_METER_BINARY` | local development helper, then PATH | Absolute reviewed helper override |
 
 Each shortened result includes a `delivery:` identifier. Pass it as MCP
@@ -396,7 +396,7 @@ is charged to the originating run/policy, even when requested later. Without an
 identifier, a unique originating run/policy is used; reused artifacts across
 multiple runs/policies and historical artifacts are labelled unknown. Set one
 deliberate `ORK_CODEX_RUN` for shell processes and the same MCP `source`
-compaction `run_id` for a benchmark task; generated per-process defaults do not
+compaction `run_id` for a task; generated per-process defaults do not
 establish whole-task attribution. Native MCP does not inherit the shell's run
 variable.
 

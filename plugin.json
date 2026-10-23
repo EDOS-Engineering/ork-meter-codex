@@ -1,6 +1,6 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "ork-meter-codex",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Reduce noisy tool output, recover exact evidence, and connect Codex usage to Ork Meter."
 }

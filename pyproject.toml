@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ork-meter-codex"
-version = "0.1.1"
+version = "0.1.2"
 description = "Recoverable local token optimizations and Ork Meter integration for Codex"
 requires-python = ">=3.11"
 dependencies = ["tiktoken==0.9.0", "keyring>=24.3.1,<26"]

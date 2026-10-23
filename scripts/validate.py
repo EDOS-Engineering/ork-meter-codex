@@ -13,7 +13,7 @@ def validate():
     portable = json.loads((ROOT / "plugin.json").read_text())
     compat = json.loads((ROOT / ".codex-plugin/plugin.json").read_text())
     assert portable["name"] == compat["name"] == "ork-meter-codex"
-    assert portable["version"] == compat["version"] == "0.1.1"
+    assert portable["version"] == compat["version"] == "0.1.2"
     assert "skills" not in compat, "plugin must not register skills"
     assert not (ROOT / "skills").exists(), "default skills root must not be discoverable"
     assert "hooks" not in compat, "plugin must not register startup instructions"

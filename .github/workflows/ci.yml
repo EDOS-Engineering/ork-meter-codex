@@ -1,0 +1,26 @@
+name: ci
+
+# The installer's own tests: the pinned release file is well formed, and the
+# bootstrap installs only a wheel whose digest matches it. Nothing here
+# publishes or deploys.
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - run: python -I -B -m unittest discover -s tests -v

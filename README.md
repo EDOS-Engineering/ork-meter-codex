@@ -11,10 +11,21 @@ Current release: **0.1.3**.
 
 ## Install
 
-```text
+macOS and Linux:
+
+```sh
 codex plugin marketplace add EDOS-Engineering/ork-meter-codex
 codex plugin add ork-meter-codex@edos-codex
-python -I -B <installed plugin>/scripts/ork_codex.py setup
+python3 -I -B "${CODEX_HOME:-$HOME/.codex}/plugins/cache/edos-codex/ork-meter-codex/0.1.3/scripts/ork_codex.py" setup
+```
+
+Windows (PowerShell):
+
+```powershell
+codex plugin marketplace add EDOS-Engineering/ork-meter-codex
+codex plugin add ork-meter-codex@edos-codex
+$codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { "$HOME\.codex" }
+python -I -B "$codexHome\plugins\cache\edos-codex\ork-meter-codex\0.1.3\scripts\ork_codex.py" setup
 ```
 
 Requires Python 3.11 or later and the Codex CLI. The first run downloads the

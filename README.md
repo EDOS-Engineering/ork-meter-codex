@@ -14,10 +14,15 @@ Current release: **0.1.3**.
 ```text
 codex plugin marketplace add EDOS-Engineering/ork-meter-codex
 codex plugin add ork-meter-codex@edos-codex
-python -I -B <installed plugin>/scripts/ork_codex.py setup
+python3 -I -B <installed plugin>/scripts/ork_codex.py setup
 ```
 
-Requires Python 3.11 or later and the Codex CLI. The first run downloads the
+Requires the Codex CLI and any Python 3 to start the command (on Windows,
+`py`). This release installs into Python 3.13, 3.12 or 3.11 (the versions
+`release.json` lists); the command finds one of those itself, on PATH, through
+the Windows `py` launcher or through `uv python find`, and reruns under it. If
+none is installed it says so and names the one install command for your
+system. The first run downloads the
 `ork-meter-codex` wheel over HTTPS, refuses it unless its SHA-256 equals the
 digest in `release.json`, creates a private virtual environment under
 `$CODEX_HOME/ork-meter-codex/package/0.1.3/`, installs the wheel and its

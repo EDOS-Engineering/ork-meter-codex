@@ -59,6 +59,58 @@ class ReleaseFile(unittest.TestCase):
         manifest = json.loads((ROOT / ".codex-plugin/plugin.json").read_text(encoding="utf-8"))
         self.assertEqual(manifest["version"], data["version"])
 
+    def test_release_json_lists_the_pythons_the_wheel_installs_on(self):
+        data = bootstrap.release()
+        self.assertTrue(data["python"])
+        for version in data["python"]:
+            self.assertRegex(version, r"^3\.\d+$")
+
+
+class PickPython(unittest.TestCase):
+    """Setup finds a supported Python itself; nobody picks a version by hand."""
+
+    def setUp(self):
+        self.data = {"version": "9.9.9", "python": ["3.13", "3.12", "3.11"]}
+
+    def test_prefers_the_first_listed_version_that_is_present(self):
+        present = {"3.12": "/opt/py312/bin/python3.12", "3.11": "/usr/bin/python3.11"}
+        with patch.object(bootstrap, "candidates", lambda v: [[present[v]]] if v in present else []), \
+             patch.object(bootstrap, "probe", lambda command: (command[0], next(v for v, p in present.items() if p == command[0]))):
+            self.assertEqual(bootstrap.supported_python(self.data), "/opt/py312/bin/python3.12")
+
+    def test_a_candidate_that_reports_another_version_is_skipped(self):
+        with patch.object(bootstrap, "candidates", lambda v: [["/shim/python" + v]]), \
+             patch.object(bootstrap, "probe", lambda command: (command[0], "3.14")):
+            self.assertIsNone(bootstrap.supported_python(self.data))
+
+    def test_unsupported_interpreter_reruns_itself_under_a_supported_one(self):
+        calls = []
+        with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, {"CODEX_HOME": home}), \
+             patch.dict(os.environ, {}, clear=False) as env, \
+             patch.object(bootstrap, "release", lambda: dict(self.data, wheel="w", sha256="0" * 64, base="https://x/")), \
+             patch.object(bootstrap, "running", lambda: "3.14"), \
+             patch.object(bootstrap, "supported_python", lambda data: "/opt/py313/bin/python3.13"), \
+             patch.object(bootstrap, "install", lambda data: self.fail("must not install under an unsupported Python")), \
+             patch.object(bootstrap, "run", lambda command, argv: calls.append((command, argv)) or 0):
+            env.pop(bootstrap.REEXEC, None)
+            self.assertEqual(bootstrap.main(["ork_codex.py", "setup"]), 0)
+            self.assertEqual(os.environ.get(bootstrap.REEXEC), "1")
+        self.assertEqual(calls[0][0], "/opt/py313/bin/python3.13")
+        self.assertEqual(calls[0][1][:2], ["-I", "-B"])
+        self.assertTrue(calls[0][1][2].endswith("ork_codex.py"))
+        self.assertEqual(calls[0][1][3:], ["setup"])
+
+    def test_no_supported_python_names_the_one_command_that_fixes_it(self):
+        with tempfile.TemporaryDirectory() as home, patch.dict(os.environ, {"CODEX_HOME": home}), \
+             patch.object(bootstrap, "release", lambda: dict(self.data, wheel="w", sha256="0" * 64, base="https://x/")), \
+             patch.object(bootstrap, "running", lambda: "3.9"), \
+             patch.object(bootstrap, "supported_python", lambda data: None), \
+             patch("sys.stderr") as stderr:
+            self.assertEqual(bootstrap.main(["ork_codex.py", "setup"]), 1)
+        message = "".join(call.args[0] for call in stderr.write.call_args_list)
+        self.assertIn("3.13", message)
+        self.assertIn("run the same command again", message)
+
 
 class Install(unittest.TestCase):
     def setUp(self):

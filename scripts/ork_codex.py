@@ -13,12 +13,19 @@ pip, and record the digest. Every run: verify that record, then run the
 installed `ork-codex` command with the arguments given. A new release is a
 new `release.json`; the earlier environment stays until you delete it.
 
-Python 3.11 or later, standard library only.
+Any Python 3.8 or later can start this file. The released wheel's pinned
+dependencies ship binary wheels only for the Python versions `release.json`
+lists under `python`, so before the first install this file finds one of
+those on its own: the interpreter running it, `pythonX.Y` on PATH, the
+Windows `py -X.Y` launcher, or `uv python find X.Y`. It then runs itself
+again under that interpreter. Nobody has to pick a Python version by hand.
+Standard library only.
 """
 import hashlib
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -30,6 +37,10 @@ import venv
 ROOT = Path(__file__).resolve().parents[1]
 WHEEL_LIMIT = 32 * 1024 * 1024
 TIMEOUT = 120
+# Python versions the 0.1.x wheels' pinned dependencies have binary wheels for,
+# in preference order. release.json's "python" list overrides this.
+PYTHONS = ("3.13", "3.12", "3.11")
+REEXEC = "ORK_CODEX_BOOTSTRAP_PYTHON"
 
 
 def release():
@@ -37,6 +48,9 @@ def release():
     for key in ("version", "wheel", "sha256", "base"):
         if not isinstance(data.get(key), str) or not data[key]:
             raise ValueError(f"release.json lacks {key}")
+    pythons = data.setdefault("python", list(PYTHONS))
+    if not isinstance(pythons, list) or not pythons or not all(isinstance(v, str) and v.count(".") == 1 for v in pythons):
+        raise ValueError("release.json python is not a list of X.Y versions")
     if len(data["sha256"]) != 64 or any(c not in "0123456789abcdef" for c in data["sha256"]):
         raise ValueError("release.json sha256 is not a lowercase hex SHA-256")
     return data
@@ -151,16 +165,86 @@ def install(data, log=print):
     return command
 
 
+def running():
+    return "%d.%d" % sys.version_info[:2]
+
+
+def probe(command):
+    """The interpreter path and X.Y version that `command` runs, or None."""
+    try:
+        result = subprocess.run([*command, "-I", "-c", "import sys; print(sys.executable); print('%d.%d' % sys.version_info[:2])"],
+                                capture_output=True, text=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    lines = result.stdout.split()
+    if result.returncode != 0 or len(lines) != 2:
+        return None
+    return lines[0], lines[1]
+
+
+def candidates(version):
+    if os.name == "nt" and shutil.which("py"):
+        yield ["py", f"-{version}"]
+    found = shutil.which(f"python{version}")
+    if found:
+        yield [found]
+    uv = shutil.which("uv")
+    if uv:
+        try:
+            result = subprocess.run([uv, "python", "find", "--no-project", version], capture_output=True, text=True, timeout=60)
+        except (OSError, subprocess.SubprocessError):
+            return
+        if result.returncode == 0 and result.stdout.strip():
+            yield [result.stdout.strip().splitlines()[-1]]
+
+
+def supported_python(data):
+    """A supported interpreter's path, preferring release.json's order, or None."""
+    for version in data["python"]:
+        for command in candidates(version):
+            found = probe(command)
+            if found and found[1] == version:
+                return found[0]
+    return None
+
+
+def no_python_message(data):
+    wanted = data["python"][0]
+    listed = ", ".join(data["python"])
+    if sys.platform == "darwin":
+        hint = f"brew install python@{wanted}  (or download it from https://www.python.org/downloads/)"
+    elif os.name == "nt":
+        hint = f"winget install Python.Python.{wanted}  (or download it from https://www.python.org/downloads/)"
+    else:
+        hint = f"install python{wanted} with your package manager, or run: uv python install {wanted}"
+    return (f"Ork Meter for Codex {data['version']} needs Python {listed}; this computer runs {running()} and has none of those.\n"
+            f"Install one alongside your current Python, then run the same command again:\n  {hint}")
+
+
+def run(command, argv):
+    if os.name == "nt":
+        return subprocess.run([str(command), *argv]).returncode
+    os.execv(str(command), [str(command), *argv])
+
+
 def main(argv):
     try:
         data = release()
-        command = installed(data) or install(data)
+        command = installed(data)
+        if command is None and running() not in data["python"]:
+            if os.environ.get(REEXEC):
+                raise ValueError(no_python_message(data))
+            python = supported_python(data)
+            if python is None:
+                raise ValueError(no_python_message(data))
+            print(f"Ork Meter for Codex: using Python at {python}", file=sys.stderr, flush=True)
+            os.environ[REEXEC] = "1"
+            return run(python, ["-I", "-B", str(Path(__file__).resolve()), *argv[1:]])
+        command = command or install(data)
     except (OSError, ValueError) as error:
         print(f"ork-meter-codex: {error}", file=sys.stderr)
         return 1
-    if os.name == "nt":
-        return subprocess.run([str(command), *argv[1:]]).returncode
-    os.execv(str(command), [str(command), *argv[1:]])
+    return run(command, argv[1:])
 
 
 if __name__ == "__main__":

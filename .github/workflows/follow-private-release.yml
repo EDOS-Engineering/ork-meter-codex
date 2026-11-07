@@ -3,8 +3,8 @@ name: follow-private-release
 # Starts the public release of every new private release: the private
 # repository holds only a read token, so this repository follows it. Each run
 # advances one step (scripts/follow_release.py): public-sync once orkmeter.com
-# serves the wheel, then publish-release, starting CI on and queueing the sync
-# pull request. The production environment still gates publication.
+# serves the wheel, then publish-release, starting CI on the sync pull request
+# and opening an issue when a person must queue it. The production environment still gates publication.
 
 on:
   schedule:
@@ -23,10 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
+      contents: read
       actions: write # start the release workflows and CI on the sync branch
-      contents: write # queue the sync pull request
       issues: write # report a release that stopped
-      pull-requests: write # queue the sync pull request
+      pull-requests: read # read the generated pull requests
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

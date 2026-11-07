@@ -1,0 +1,50 @@
+name: publish-release
+run-name: publish-release ${{ inputs.plugin_version }}
+
+# Publishes the public GitHub Release for the version main carries, behind the
+# production environment. The site's release pages read this Release's notes.
+# follow-private-release starts it after the sync pull request merges.
+
+on:
+  workflow_dispatch:
+    inputs:
+      plugin_version:
+        description: Version to publish; main's release.json must say it.
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    permissions:
+      contents: write # create the tag and the Release
+    env:
+      VERSION: ${{ inputs.plugin_version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish the Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          read -r actual digest < <(python3 -I -c 'import json; d = json.load(open("release.json")); print(d["version"], d["sha256"])')
+          [ "$actual" = "$VERSION" ] || { echo "::error::main's release.json says $actual, not $VERSION"; exit 1; }
+          {
+            echo "Ork Meter for Codex $VERSION."
+            echo
+            echo "Install or update: https://orkmeter.com/install"
+            echo
+            echo "Wheel SHA-256: \`$digest\`"
+          } > "$RUNNER_TEMP/notes"
+          gh release create "v$VERSION" --target "$GITHUB_SHA" --title "Ork Meter for Codex $VERSION" --notes-file "$RUNNER_TEMP/notes"

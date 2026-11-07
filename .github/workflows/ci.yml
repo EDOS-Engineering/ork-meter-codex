@@ -10,6 +10,7 @@ on:
     types: [checks_requested]
   push:
     branches: [main]
+  workflow_dispatch: # follow-private-release starts CI on the sync branch
 
 permissions:
   contents: read

@@ -1,0 +1,74 @@
+name: public-sync
+run-name: public-sync ${{ inputs.version }}
+
+# Proposes a delivered release of the private repository as a pull request:
+# regenerates this tree with that tag's scripts/thin_public.py and the release's
+# manifest.json. It never pushes to main, never tags and never publishes.
+# follow-private-release starts it.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Released version to propose (the private release v<version> must exist).
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: public-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+    env:
+      VERSION: ${{ inputs.version }}
+      PRIVATE_REPOSITORY: EDOS-Engineering/codex-plugin
+    steps:
+      - name: Refuse a malformed version
+        run: |
+          set -euo pipefail
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::version must be semver, got $VERSION"; exit 1; }
+      - name: Check out main
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: main
+          path: public
+          persist-credentials: true
+      - name: Check out the released private tree
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: ${{ env.PRIVATE_REPOSITORY }}
+          ref: refs/tags/v${{ inputs.version }}
+          path: private
+          token: ${{ secrets.ORK_METER_READ_TOKEN }} # read-only
+          persist-credentials: false
+      - name: Generate this tree from the release
+        env:
+          GH_TOKEN: ${{ secrets.ORK_METER_READ_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh release download "v$VERSION" -R "$PRIVATE_REPOSITORY" -p manifest.json -O "$RUNNER_TEMP/manifest.json"
+          python3 -I -B private/scripts/thin_public.py --manifest "$RUNNER_TEMP/manifest.json" --output public --clean
+          rm -rf private
+      - name: Open the sync pull request
+        working-directory: public
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          branch="sync/$VERSION"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A
+          git commit -q -m "release: $VERSION"
+          git push origin "HEAD:refs/heads/$branch"
+          gh pr create --base main --head "$branch" --title "release: $VERSION" \
+            --body "Generated from the private release v$VERSION. Customers get this version when it merges."

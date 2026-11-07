@@ -7,7 +7,7 @@ Python package and a reviewed helper binary, both served from
 `https://orkmeter.com/releases/codex/`, and `release.json` here pins the one
 version you get, by SHA-256.
 
-Current release: **0.1.4**.
+Current release: **0.1.5**.
 
 ## Install
 
@@ -48,14 +48,14 @@ On Windows it is `ork-codex.cmd` in the same folder. The same command takes
 ```sh
 codex plugin marketplace add EDOS-Engineering/ork-meter-codex
 codex plugin add ork-meter-codex@edos-codex
-python3 -I -B "${CODEX_HOME:-$HOME/.codex}/plugins/cache/edos-codex/ork-meter-codex/0.1.4/scripts/ork_codex.py" setup
+python3 -I -B "${CODEX_HOME:-$HOME/.codex}/plugins/cache/edos-codex/ork-meter-codex/0.1.5/scripts/ork_codex.py" setup
 ```
 
 ```powershell
 codex plugin marketplace add EDOS-Engineering/ork-meter-codex
 codex plugin add ork-meter-codex@edos-codex
 $codexHome = if ($env:CODEX_HOME) { $env:CODEX_HOME } else { "$HOME\.codex" }
-py -I -B "$codexHome\plugins\cache\edos-codex\ork-meter-codex\0.1.4\scripts\ork_codex.py" setup
+py -I -B "$codexHome\plugins\cache\edos-codex\ork-meter-codex\0.1.5\scripts\ork_codex.py" setup
 ```
 
 </details>
@@ -68,7 +68,7 @@ none is installed it says so and names the one install command for your
 system. The first run downloads the
 `ork-meter-codex` wheel over HTTPS, refuses it unless its SHA-256 equals the
 digest in `release.json`, creates a private virtual environment under
-`$CODEX_HOME/ork-meter-codex/package/0.1.4/`, installs the wheel and its
+`$CODEX_HOME/ork-meter-codex/package/0.1.5/`, installs the wheel and its
 dependencies (`tiktoken`, `keyring`, `aiohttp`, `tomlkit`) from PyPI with
 pip, and then runs the installed `ork-codex` command. Every later run verifies that record and
 runs the command. Setup then downloads the Ork Meter helper for your

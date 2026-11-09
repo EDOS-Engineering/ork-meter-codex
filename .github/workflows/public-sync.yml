@@ -4,7 +4,10 @@ run-name: public-sync ${{ inputs.version }}
 # Proposes a delivered release of the private repository as a pull request:
 # regenerates this tree with that tag's scripts/thin_public.py and the release's
 # manifest.json. It never pushes to main, never tags and never publishes.
-# follow-private-release starts it.
+# The private repository's deliver-release.py starts it once orkmeter.com serves
+# the release. The pull request is opened with a GitHub App token, not
+# GITHUB_TOKEN: GitHub starts no workflow for GITHUB_TOKEN events, so a pull
+# request opened with it would get no CI.
 
 on:
   workflow_dispatch:
@@ -35,13 +38,41 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "::error::version must be semver, got $VERSION"; exit 1; }
+      - name: Mint a token for this repository
+        id: app
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ vars.ORK_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORK_GITHUB_APP_PRIVATE_KEY_PEM }}
+          owner: ${{ github.repository_owner }}
+          repositories: ${{ github.event.repository.name }}
+          permission-contents: write
+          permission-pull-requests: write
+          permission-workflows: write # the generated tree carries this repository's workflows
+      - name: Stop if this version is already proposed or live
+        id: needed
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          live=$(gh api "repos/$GITHUB_REPOSITORY/contents/release.json?ref=main" -q .content | base64 -d | python3 -I -c 'import json, sys; print(json.load(sys.stdin)["version"])')
+          open=$(gh pr list -R "$GITHUB_REPOSITORY" --head "sync/$VERSION" --state open --json number -q 'length')
+          if [ "$live" = "$VERSION" ] || [ "$open" != "0" ]; then
+            echo "::notice::$VERSION is already live on main or proposed; nothing to do"
+            echo "run=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "run=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Check out main
+        if: steps.needed.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: main
           path: public
+          token: ${{ steps.app.outputs.token }}
           persist-credentials: true
       - name: Check out the released private tree
+        if: steps.needed.outputs.run == 'true'
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: ${{ env.PRIVATE_REPOSITORY }}
@@ -50,6 +81,7 @@ jobs:
           token: ${{ secrets.ORK_METER_READ_TOKEN }} # read-only
           persist-credentials: false
       - name: Generate this tree from the release
+        if: steps.needed.outputs.run == 'true'
         env:
           GH_TOKEN: ${{ secrets.ORK_METER_READ_TOKEN }}
         run: |
@@ -58,17 +90,20 @@ jobs:
           python3 -I -B private/scripts/thin_public.py --manifest "$RUNNER_TEMP/manifest.json" --output public --clean
           rm -rf private
       - name: Open the sync pull request
+        if: steps.needed.outputs.run == 'true'
         working-directory: public
         env:
-          GH_TOKEN: ${{ github.token }}
+          GH_TOKEN: ${{ steps.app.outputs.token }}
+          APP_SLUG: ${{ steps.app.outputs.app-slug }}
         run: |
           set -euo pipefail
           branch="sync/$VERSION"
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          user_id=$(gh api "/users/${APP_SLUG}[bot]" -q .id)
+          git config user.name "${APP_SLUG}[bot]"
+          git config user.email "${user_id}+${APP_SLUG}[bot]@users.noreply.github.com"
           git checkout -b "$branch"
           git add -A
           git commit -q -m "release: $VERSION"
           git push origin "HEAD:refs/heads/$branch"
           gh pr create --base main --head "$branch" --title "release: $VERSION" \
-            --body "Generated from the private release v$VERSION. Customers get this version when it merges."
+            --body "Generated from the private release v$VERSION. Customers get this version when it merges, and the merge starts publish-release."

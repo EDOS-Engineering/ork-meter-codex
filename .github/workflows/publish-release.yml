@@ -1,11 +1,15 @@
 name: publish-release
-run-name: publish-release ${{ inputs.plugin_version }}
+run-name: publish-release ${{ inputs.plugin_version || 'from main' }}
 
 # Publishes the public GitHub Release for the version main carries, behind the
 # production environment. The site's release pages read this Release's notes.
-# follow-private-release starts it after the sync pull request merges.
+# The sync pull request's merge starts it (a push to main that changes
+# release.json); it can also be started by hand.
 
 on:
+  push:
+    branches: [main]
+    paths: [release.json]
   workflow_dispatch:
     inputs:
       plugin_version:
@@ -27,8 +31,6 @@ jobs:
     environment: production
     permissions:
       contents: write # create the tag and the Release
-    env:
-      VERSION: ${{ inputs.plugin_version }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -36,10 +38,16 @@ jobs:
       - name: Publish the Release
         env:
           GH_TOKEN: ${{ github.token }}
+          REQUESTED: ${{ inputs.plugin_version }}
         run: |
           set -euo pipefail
           read -r actual digest < <(python3 -I -c 'import json; d = json.load(open("release.json")); print(d["version"], d["sha256"])')
+          VERSION="${REQUESTED:-$actual}"
           [ "$actual" = "$VERSION" ] || { echo "::error::main's release.json says $actual, not $VERSION"; exit 1; }
+          if gh release view "v$VERSION" -R "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::notice::v$VERSION is already published"
+            exit 0
+          fi
           {
             echo "Ork Meter for Codex $VERSION."
             echo
@@ -48,3 +56,16 @@ jobs:
             echo "Wheel SHA-256: \`$digest\`"
           } > "$RUNNER_TEMP/notes"
           gh release create "v$VERSION" --target "$GITHUB_SHA" --title "Ork Meter for Codex $VERSION" --notes-file "$RUNNER_TEMP/notes"
+      - name: Mint a token to start the site's release-page sync
+        id: site
+        uses: actions/create-github-app-token@fee1f7d63c2ff003460e3d139729b119787bc349 # v2.2.2
+        with:
+          app-id: ${{ vars.ORK_GITHUB_APP_ID }}
+          private-key: ${{ secrets.ORK_GITHUB_APP_PRIVATE_KEY_PEM }}
+          owner: ${{ github.repository_owner }}
+          repositories: ork-meter
+          permission-actions: write
+      - name: Start the site's release-page sync
+        env:
+          GH_TOKEN: ${{ steps.site.outputs.token }}
+        run: gh workflow run plugin-releases.yml -R "$GITHUB_REPOSITORY_OWNER/ork-meter" --ref main

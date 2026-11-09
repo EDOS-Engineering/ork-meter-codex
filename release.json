@@ -1,7 +1,7 @@
 {
-  "version": "0.1.5",
-  "wheel": "ork_meter_codex-0.1.5-py3-none-any.whl",
-  "sha256": "4d3447a8c915fc3ecd875c921b183bc3f738a19c5cbb2a64b6a98be07335176a",
+  "version": "0.1.6",
+  "wheel": "ork_meter_codex-0.1.6-py3-none-any.whl",
+  "sha256": "cb52caf7a6734abcb88a0b0e6ac9b075aee41bb0ebdc3e7ecfc661eb690ef82d",
   "base": "https://orkmeter.com/releases/codex/",
   "python": [
     "3.14",

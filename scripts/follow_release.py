@@ -3,7 +3,9 @@
 
 Usage: follow_release.py [--dry-run]
 
-Run on a schedule by follow-private-release.yml. The private repository holds
+Run by hand through follow-private-release.yml, to resume a stopped release:
+the normal path is event-driven (deliver-release.py starts public-sync, and
+the sync merge starts publish-release). The private repository holds
 only a read token, so this repository follows it rather than being pushed to.
 decide() is the whole policy. A release goes live when main carries its
 release.json, so nothing happens until orkmeter.com serves the wheel. A step
@@ -183,7 +185,7 @@ def sync_issue(repository, message, version):
             gh("issue", "close", str(issue["number"]), "-R", repository, "--comment", "The release moved on.")
     if title and not any(issue["title"] == title for issue in issues):
         gh("issue", "create", "-R", repository, "--title", title, "--body",
-           f"The automatic public release of {version} stopped here. It continues on the next scheduled run once this is resolved.")
+           f"The automatic public release of {version} stopped here. Resolve it, then run follow-private-release by hand.")
 
 
 def main(argv=None):

@@ -8,9 +8,8 @@ on:
   pull_request:
   merge_group:
     types: [checks_requested]
-  push:
-    branches: [main]
-  workflow_dispatch: # follow-private-release starts CI on the sync branch
+  # No push to main: the merge queue already tested the merged tree.
+  workflow_dispatch:
 
 permissions:
   contents: read

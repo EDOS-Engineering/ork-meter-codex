@@ -1,6 +1,6 @@
 {
   "name": "ork-meter-codex",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "description": "Recoverable token optimizations and Ork Meter usage tracking for Codex.",
   "author": {
     "name": "EDOS Engineering"
